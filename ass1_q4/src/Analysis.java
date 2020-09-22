@@ -10,6 +10,7 @@ import org.antlr.v4.runtime.tree.TerminalNode;
 // FIXME: You should limit your implementation to this class. You are free to add new auxilliary classes. You do not need to touch the LoopNext.g4 file.
 class Analysis extends LoopNestBaseListener {
 	Data data;
+	List<HashMap<String, Long>> results;
     // Possible types
     enum Types {
         Byte, Short, Int, Long, Char, Float, Double, Boolean, String
@@ -73,22 +74,34 @@ class Analysis extends LoopNestBaseListener {
 
     public Analysis() {
         System.out.println("I am a constructor");
-        this.data = new Data();
-        data.misses = 0;
+        results = new ArrayList<HashMap<String, Long>>();
     }
     
 	private void computeMisses() {
 		System.out.println("computeMisses");
 		long misses = 0;
+		HashMap<String, Long> misses_map  = new HashMap<>();
 		for (String array_name : data.arrays_ds.keySet()) {
 			misses += computeMissesArray(data.arrays_ds.get(array_name));
+			System.out.printf("misses in array: %s are %d%n", array_name, data.arrays_ds.get(array_name).misses);
 		}
+		for (String array_name : data.arrays_ds.keySet()) {
+			System.out.printf("misses in array: %s are %d%n", array_name, data.arrays_ds.get(array_name).misses);
+			for (String loop_iterator : data.arrays_ds.get(array_name).cmfloops.keySet()) {
+				System.out.printf("iterator: %s: misses %d%n",loop_iterator, data.arrays_ds.get(array_name).cmfloops.get(loop_iterator));
+			}
+			misses_map.put(array_name, data.arrays_ds.get(array_name).misses);
+		}
+		results.add(misses_map);
+		System.out.printf("total misses: %d%n", misses);
 	}
 
     private long computeMissesArray(Array_ds array_ds) {
     	System.out.println("computeMissesArray");
+    	System.out.printf("array name is: %s%n", array_ds.array_name);
     	List<String> loops_below = new ArrayList<String>();
-    	long misses = 0;
+    	long misses = 1;
+    	long cmf;
     	System.out.println(array_ds.loops.size());
     	for(int i = array_ds.loops.size()-1; i>=0; i--) {
     		Loop loop = array_ds.loops.get(i);
@@ -97,45 +110,203 @@ class Analysis extends LoopNestBaseListener {
     		if(cmdr.equals(loop.iterator)) {
     			System.out.println("Commander is this loop: " + cmdr);
     			int levCmd = findLoc(cmdr, array_ds.access_seq);
-    			long cmf = computeCmfCore(levCmd, Long.parseLong(loop.stride), Long.parseLong(loop.upperBound));
-    			misses+=cmf;
+    			cmf = computeCmfCore(levCmd, Long.parseLong(loop.stride), Long.parseLong(data.variables_map.get(loop.upperBound).value), array_ds);
+    			misses*=cmf;
     		}else {
     			int levCmd = findLoc(cmdr, array_ds.access_seq);
-    			if(misses > check_misses(levCmd, cmdr)) {
+    			if(check_misses(misses, levCmd, cmdr, array_ds)) {
     				System.out.println("Eviction happened");
-    				long cmf = (Long.parseLong(loop.upperBound)/Long.parseLong(loop.stride));
-    				misses+=cmf;
+    				cmf = (Long.parseLong(data.variables_map.get(loop.upperBound).value)/Long.parseLong(loop.stride));
+    				misses*=cmf;
     			}else {
     				System.out.println("Eviction did not happen");
     				int levCmdLoop = findLoc(loop.iterator, array_ds.access_seq);
-    				long cmf = computeCmfCore(levCmdLoop, Long.parseLong(loop.stride), Long.parseLong(loop.upperBound));
-    				misses+=cmf;
+    				cmf = computeCmfCore(levCmdLoop, Long.parseLong(loop.stride), Long.parseLong(data.variables_map.get(loop.upperBound).value), array_ds);
+    				misses*=cmf;
     			}
     		}
+    		data.arrays_ds.get(array_ds.array_name).cmfloops.put(loop.iterator, cmf);
     		loops_below.add(loop.iterator);
     	}
     	data.arrays_ds.get(array_ds.array_name).misses = misses;
 		return misses;
 	}
 
-	private long check_misses(int levCmd, String cmdr) {
-		// TODO Auto-generated method stub
-		return 0;
-	}
 
-	private long computeCmfCore(int levCmd, long parseLong, long parseLong2) {
-		// TODO Auto-generated method stub
-		return 0;
-	}
+private boolean check_misses(long misses, int levCmd, String cmdr, Array_ds array_ds) {
+    // TODO Auto-generated method stub
+    System.out.println("check_misses");
+    long blockPower = Long.parseLong(data.variables_map.get("blockPower").value);
+    long blockSize = (long) Math.pow(2, blockPower);
+    long wordSize = (long) Math.pow(2, typeToSize.get(stringToType.get(array_ds.type)));
+    blockSize = blockSize/wordSize;
+    long cachePower = Long.parseLong(data.variables_map.get("cachePower").value);
+    long cacheSize = (long) Math.pow(2, cachePower);
+    cacheSize = cacheSize/wordSize;
+    long rowSize = 0;
+    long colSize = 0;
+    long arraySize = 0;
+    long k = 1;
+    long nSets = 1;
+    if(array_ds.nDims >= 2) {
+        rowSize = Long.parseLong(data.variables_map.get(array_ds.ub_seq.get(array_ds.ub_seq.size()-1)).value);
+        System.out.println("rowSize: ");
+        System.out.println(rowSize);
+    }
+    if(array_ds.nDims >= 3) {
+        colSize = Long.parseLong(data.variables_map.get(array_ds.ub_seq.get(array_ds.ub_seq.size()-2)).value);
+        arraySize = colSize*rowSize;
+        System.out.println("colSize: ");
+        System.out.println(colSize);
+        System.out.println("arraySize: ");
+        System.out.println(arraySize);
+    }
+    System.out.printf("loc: %d, array_name: %s, blockPower: %d, blockSize: %d, wordSize: %d%n", levCmd, array_ds.array_name, blockPower, blockSize, wordSize);
+    if(data.variables_map.get("cacheType").value.equals("\"FullyAssociative\"")) {
+        System.out.println("FullyAssociative cache");
+        nSets = (long) Math.pow(2, cachePower-blockPower); 
+        return misses > nSets;
+    }else {
+    	System.out.println(data.variables_map.get("cacheType").value);
+        if(data.variables_map.get("cacheType").value.equals("\"DirectMapped\"")) {
+            k = 1;
+        }else {
+            k = Long.parseLong(data.variables_map.get("setSize").value);
+        }
+    }    
+    nSets = (long) (Math.pow(2, cachePower-blockPower)/k);
+    System.out.printf("k is: %d, nSets: %d%n", k, nSets);
+    switch (levCmd) {
+        case 1:
+            return false;
+        case 2:
+            return rowSize > cacheSize;
+        case 3:
+            long nbr = rowSize/blockSize;
+            return misses > (k*(nSets/nbr));
+        case 4:
+            long nba = arraySize/blockSize;
+            return misses > (k*(nSets/nba));
+        default:
+            System.out.println("Error: Undefined loc: ");
+            System.out.println(levCmd);
+            break;
+    }
+   
+    return false;
+}
+
+
+
+private long computeCmfCore(int levCmd, long stride, long ub, Array_ds array_ds) {
+    // TODO Auto-generated method stub
+	System.out.println("computeCmfCore");
+    long blockPower = Long.parseLong(data.variables_map.get("blockPower").value);
+    long blockSize = (long) Math.pow(2, blockPower);
+    long wordSize = (long) Math.pow(2, typeToSize.get(stringToType.get(array_ds.type)));
+    blockSize = blockSize/wordSize;
+    long rowSize = 0;
+    long colSize = 0;
+    long arraySize = 0;
+    if(array_ds.nDims >= 2) {
+        rowSize = Long.parseLong(data.variables_map.get(array_ds.ub_seq.get(array_ds.ub_seq.size()-1)).value);
+        System.out.println("rowSize: ");
+        System.out.println(rowSize);
+    }
+    if(array_ds.nDims >= 3) {
+        colSize = Long.parseLong(data.variables_map.get(array_ds.ub_seq.get(array_ds.ub_seq.size()-2)).value);
+        arraySize = colSize*rowSize;
+        System.out.println("colSize: ");
+        System.out.println(colSize);
+        System.out.println("arraySize: ");
+        System.out.println(arraySize);
+    }
+    System.out.printf("loc: %d, stride: %d, ub: %d, array_name: %s, blockPower: %d, blockSize: %d, wordSize: %d%n", levCmd, stride, ub, array_ds.array_name, blockPower, blockSize, wordSize);
+    
+    switch(levCmd) {
+    case 1:
+    	System.out.println("case 1");
+        return 1;
+    case 2:
+    	System.out.println("case 2");
+        if(blockSize > stride){
+        	System.out.println("blockSize > stride");
+        	if(ub/blockSize < 1) 
+        		return 1;
+            return ub/blockSize;
+        }else{
+        	System.out.println("blockSize <= stride");
+            return ub/stride;
+        }
+    case 3:
+    	System.out.println("case 3");
+        if(blockSize > rowSize){
+        	System.out.println("blockSize > rowSize");
+            long nRows = blockSize/rowSize;
+            if(nRows > stride){
+                if(ub/nRows < 1) 
+            		return 1;
+                return ub/nRows;
+            }else{
+                return ub/stride;
+            }
+        }else{
+        	System.out.println("blockSize <= rowSize");
+            return ub/stride;
+        }
+    case 4:
+    	System.out.println("case 4");
+        if(blockSize > arraySize){
+        	System.out.println("blockSize > arraySize");
+            long nArr = blockSize/arraySize;
+            if(nArr > stride){
+                if(ub/nArr < 1) 
+            		return 1;
+                return ub/nArr;
+            }else{
+                return ub/stride;
+            }
+        }else{
+        	System.out.println("blockSize <= arraySize");
+            return ub/stride;
+        }
+    default:
+        System.out.println("Error: Undefined loc: ");
+        System.out.println(levCmd);
+    }
+//		long arraySize = Long.parseLong(data.variables_map.get(ar/).value);
+    return 0;
+}
 
 	private int findLoc(String cmdr, List<String> access_seq) {
 		// TODO Auto-generated method stub
-		return 0;
+		System.out.println("findLoc");
+		int loc = 1;
+		for(int i=access_seq.size()-1; i >=0; i--) {
+			loc +=1;
+			if(cmdr.equals(access_seq.get(i))) {
+				return loc;
+			}
+		}
+		return 1;
 	}
 
 	private String findCmdr(String iterator, List<String> access_seq, List<String> loops_below) {
 		// TODO Auto-generated method stub
-		return null;
+		System.out.println("findCmdr");
+		int max=0;
+		String cmdr = null;
+		for(int i=0; i<loops_below.size(); i++) {
+			if(max < findLoc(loops_below.get(i), access_seq)) {
+				max = findLoc(loops_below.get(i), access_seq);
+				cmdr = loops_below.get(i);
+			}
+		}
+		if(max < findLoc(iterator, access_seq)) {
+			max = findLoc(iterator, access_seq);
+			cmdr = iterator;
+		}
+		return cmdr;
 	}
 
 	// FIXME: Feel free to override additional methods from
@@ -144,7 +315,8 @@ class Analysis extends LoopNestBaseListener {
     @Override
     public void enterMethodDeclaration(LoopNestParser.MethodDeclarationContext ctx) {
         System.out.println("enterMethodDeclaration");
-        
+        this.data = new Data();
+        data.misses = 0;
     }
     @Override
     public void exitMethodDeclaration(LoopNestParser.MethodDeclarationContext ctx) {
@@ -163,11 +335,12 @@ class Analysis extends LoopNestBaseListener {
 
     @Override
     public void exitTests(LoopNestParser.TestsContext ctx) {
+    	System.out.println("exitTests");
         try {
             FileOutputStream fos = new FileOutputStream("Results.obj");
             ObjectOutputStream oos = new ObjectOutputStream(fos);
             // FIXME: Serialize your data to a file
-            // oos.writeObject();
+             oos.writeObject(results);
             oos.close();
         } catch (Exception e) {
             throw new RuntimeException(e.getMessage());
@@ -207,6 +380,11 @@ class Analysis extends LoopNestBaseListener {
     		array_ds.type = ctx.localVariableDeclaration().unannType().unannArrayType().unannPrimitiveType().getText();
     		array_ds.array_name = ctx.localVariableDeclaration().variableDeclarator().variableDeclaratorId().getText();
     		array_ds.nDims = ctx.localVariableDeclaration().unannType().unannArrayType().dims().getChildCount()/2;
+    		System.out.println(array_ds.array_name +" has dimension: ");
+    		for(int i=0; i<array_ds.nDims; i++) {    			
+    			System.out.println(ctx.localVariableDeclaration().variableDeclarator().arrayCreationExpression().dimExprs().getChild(i).getChild(1).getText());
+    			array_ds.ub_seq.add(ctx.localVariableDeclaration().variableDeclarator().arrayCreationExpression().dimExprs().getChild(i).getChild(1).getText());
+    		}
     		data.arrays_ds.put(array_ds.array_name, array_ds);
     		System.out.println(data.arrays_ds.size());
 //    		System.out.println(vd.type + vd.name + vd.value);
