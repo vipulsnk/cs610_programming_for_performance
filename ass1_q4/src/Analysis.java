@@ -102,6 +102,7 @@ class Analysis extends LoopNestBaseListener {
     	List<String> loops_below = new ArrayList<String>();
         long misses = 1;
         long cumm_misses = 1;
+        long cmdr_misses = 1;
     	long cmf;
     	System.out.println(array_ds.loops.size());
     	for(int i = array_ds.loops.size()-1; i>=0; i--) {
@@ -114,20 +115,21 @@ class Analysis extends LoopNestBaseListener {
     			int levCmd = findLoc(cmdr, array_ds.access_seq);
     			cmf = computeCmfCore(levCmd, Long.parseLong(loop.stride), Long.parseLong(data.variables_map.get(loop.upperBound).value), array_ds);
                 misses = cmf;
-                cumm_misses *= misses;
+                cmdr_misses = cmf;
+                cumm_misses *= cmf;
     		}else {
     			int levCmd = findLoc(cmdr, array_ds.access_seq);
-    			if(check_misses(misses, levCmd, cmdr, array_ds)) {
+    			if(check_misses(cmdr_misses, levCmd, cmdr, array_ds)) {
     				System.out.println("Eviction happened");
     				cmf = (Long.parseLong(data.variables_map.get(loop.upperBound).value)/Long.parseLong(loop.stride));
     				misses = cmf;
-                    cumm_misses *= misses;
+                    cumm_misses *= cmf;
     			}else {
     				System.out.println("Eviction did not happen");
     				int levCmdLoop = findLoc(loop.iterator, array_ds.access_seq);
     				cmf = computeCmfCore(levCmdLoop, Long.parseLong(loop.stride), Long.parseLong(data.variables_map.get(loop.upperBound).value), array_ds);
     				misses = cmf;
-                    cumm_misses *= misses;
+                    cumm_misses *= cmf;
     			}
     		}
     		data.arrays_ds.get(array_ds.array_name).cmfloops.put(loop.iterator, cmf);
