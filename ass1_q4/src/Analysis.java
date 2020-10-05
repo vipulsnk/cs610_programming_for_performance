@@ -100,36 +100,41 @@ class Analysis extends LoopNestBaseListener {
     	System.out.println("computeMissesArray");
     	System.out.printf("array name is: %s%n", array_ds.array_name);
     	List<String> loops_below = new ArrayList<String>();
-    	long misses = 1;
+        long misses = 1;
+        long cumm_misses = 1;
     	long cmf;
     	System.out.println(array_ds.loops.size());
     	for(int i = array_ds.loops.size()-1; i>=0; i--) {
-    		Loop loop = array_ds.loops.get(i);
+            Loop loop = array_ds.loops.get(i);
+            misses = 1;
     		System.out.println("iterator: " + loop.iterator);
     		String cmdr = findCmdr(loop.iterator, array_ds.access_seq, loops_below);
     		if(cmdr.equals(loop.iterator)) {
     			System.out.println("Commander is this loop: " + cmdr);
     			int levCmd = findLoc(cmdr, array_ds.access_seq);
     			cmf = computeCmfCore(levCmd, Long.parseLong(loop.stride), Long.parseLong(data.variables_map.get(loop.upperBound).value), array_ds);
-    			misses*=cmf;
+                misses = cmf;
+                cumm_misses *= misses;
     		}else {
     			int levCmd = findLoc(cmdr, array_ds.access_seq);
     			if(check_misses(misses, levCmd, cmdr, array_ds)) {
     				System.out.println("Eviction happened");
     				cmf = (Long.parseLong(data.variables_map.get(loop.upperBound).value)/Long.parseLong(loop.stride));
-    				misses*=cmf;
+    				misses = cmf;
+                    cumm_misses *= misses;
     			}else {
     				System.out.println("Eviction did not happen");
     				int levCmdLoop = findLoc(loop.iterator, array_ds.access_seq);
     				cmf = computeCmfCore(levCmdLoop, Long.parseLong(loop.stride), Long.parseLong(data.variables_map.get(loop.upperBound).value), array_ds);
-    				misses*=cmf;
+    				misses = cmf;
+                    cumm_misses *= misses;
     			}
     		}
     		data.arrays_ds.get(array_ds.array_name).cmfloops.put(loop.iterator, cmf);
     		loops_below.add(loop.iterator);
     	}
-    	data.arrays_ds.get(array_ds.array_name).misses = misses;
-		return misses;
+    	data.arrays_ds.get(array_ds.array_name).misses = cumm_misses;
+		return cumm_misses;
 	}
 
 
