@@ -103,6 +103,7 @@ class Analysis extends LoopNestBaseListener {
         long misses = 1;
         long cumm_misses = 1;
         long cmdr_misses = 1;
+        long misses_to_check = 1;
     	long cmf;
     	System.out.println(array_ds.loops.size());
     	for(int i = array_ds.loops.size()-1; i>=0; i--) {
@@ -118,20 +119,28 @@ class Analysis extends LoopNestBaseListener {
                 cmdr_misses = cmf;
                 cumm_misses *= cmf;
     		}else {
-    			int levCmd = findLoc(cmdr, array_ds.access_seq);
-    			if(check_misses(cmdr_misses, levCmd, cmdr, array_ds)) {
+                int levCmd = findLoc(cmdr, array_ds.access_seq);
+                if(data.variables_map.get("cacheType").value.equals("\"FullyAssociative\"")) {
+                    misses_to_check = cumm_misses;
+                }else{
+                    misses_to_check = cmdr_misses;
+                }
+    			if(check_misses(misses_to_check, levCmd, cmdr, array_ds)) {
     				System.out.println("Eviction happened");
     				cmf = (Long.parseLong(data.variables_map.get(loop.upperBound).value)/Long.parseLong(loop.stride));
     				misses = cmf;
                     cumm_misses *= cmf;
     			}else {
     				System.out.println("Eviction did not happen");
-    				int levCmdLoop = findLoc(loop.iterator, array_ds.access_seq);
+                    int levCmdLoop = findLoc(loop.iterator, array_ds.access_seq);
+                    System.out.println(data.variables_map.get(loop.upperBound).value);
     				cmf = computeCmfCore(levCmdLoop, Long.parseLong(loop.stride), Long.parseLong(data.variables_map.get(loop.upperBound).value), array_ds);
     				misses = cmf;
                     cumm_misses *= cmf;
     			}
-    		}
+            }
+            System.out.println("iterator: " + loop.iterator);
+            System.out.println("misses: " + cmf);
     		data.arrays_ds.get(array_ds.array_name).cmfloops.put(loop.iterator, cmf);
     		loops_below.add(loop.iterator);
     	}
